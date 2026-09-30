@@ -1,6 +1,8 @@
-[![Docker Image CI](https://github.com/flcontainers/guacamole/actions/workflows/docker-image.yml/badge.svg)](https://github.com/flcontainers/guacamole/actions/workflows/docker-image.yml) [![Docker Pulls](https://img.shields.io/docker/pulls/flcontainers/guacamole.svg)](https://hub.docker.com/r/flcontainers/guacamole/)
+[![Docker Image CI](https://github.com/carfanatic93/guacamole-fish/actions/workflows/docker-image.yml/badge.svg)](https://github.com/carfanatic93/guacamole-fish/actions/workflows/docker-image.yml)
 
 # Docker Guacamole
+
+> Fork of [flcontainers/guacamole](https://github.com/flcontainers/guacamole) with additional fixes, most notably a patched guacd terminal emulator that silently ignores unsupported OSC escape sequences (e.g. OSC 7 current directory, OSC 8 hyperlinks, OSC 133 shell integration). Without it, modern shells such as fish 4.x (Debian 13) produce garbage like `ile://host/path` in front of the prompt. Patches applied to guacamole-server live in `patches/guacamole-server/`.
 
 A Docker Container for [Apache Guacamole](https://guacamole.apache.org/), a client-less remote desktop gateway. It supports standard protocols like VNC, RDP, and SSH over HTML5.
 
@@ -22,7 +24,7 @@ On first start with an existing PostgreSQL 13 data directory in `/config/postgre
 docker run \
   -p 8080:8080 \
   -v </path/to/config>:/config \
-  flcontainers/guacamole
+  ghcr.io/carfanatic93/guacamole-fish
 ```
 
 ## Parameters
@@ -48,7 +50,7 @@ docker run \
   -v /etc/localtime:/etc/localtime:ro \
   -e TZ="UTC" \
   -e EXTENSIONS="auth-ldap,auth-duo" \
-  flcontainers/guacamole
+  ghcr.io/carfanatic93/guacamole-fish
 ```
 
 **Extension List:**
@@ -85,7 +87,7 @@ Mapped volumes behave differently when running Docker for Windows and you may en
 version: "3"
 services:
   guacamole:
-    image: flcontainers/guacamole
+    image: ghcr.io/carfanatic93/guacamole-fish
     container_name: guacamole
     environment:
       TZ: 'UTC'
