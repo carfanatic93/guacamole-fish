@@ -1,0 +1,127 @@
+name: Test image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      IMAGE: guacamole-fish:ci
+      OLD_IMAGE: flcontainers/guacamole:1.6.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Define helpers
+        run: |
+          cat > /tmp/helpers.sh <<'EOF'
+          # Wait until the Guacamole web app accepts the default login
+          wait_for_login() {
+            local name="$1"
+            for i in $(seq 1 120); do
+              if ! docker ps --format '{{.Names}}' | grep -qx "$name"; then
+                echo "Container $name exited"; docker logs "$name" || true; return 1
+              fi
+              if docker exec "$name" curl -sf -X POST \
+                   -d 'username=guacadmin&password=guacadmin' \
+                   http://localhost:8080/api/tokens | grep -q authToken; then
+                echo "Login on $name works"; return 0
+              fi
+              sleep 5
+            done
+            echo "Timed out waiting for $name"; docker logs "$name" || true; return 1
+          }
+
+          psql_in() {
+            docker exec "$1" psql -U guacamole -d guacamole_db -tAc "$2"
+          }
+          EOF
+
+      - name: "Scenario 1: fresh install"
+        run: |
+          . /tmp/helpers.sh
+          docker run -d --name fresh -v fresh:/config "$IMAGE"
+          wait_for_login fresh
+          test "$(docker exec fresh cat /config/postgres/PG_VERSION)" = "16"
+          docker rm -f fresh
+
+      - name: "Scenario 2: migrate PostgreSQL 13 data from the upstream 1.6.0 image"
+        run: |
+          . /tmp/helpers.sh
+          docker run -d --name old -v migrate:/config "$OLD_IMAGE"
+          wait_for_login old
+          test "$(docker exec old cat /config/postgres/PG_VERSION)" = "13"
+          psql_in old "INSERT INTO guacamole_connection (connection_name, protocol) VALUES ('ci-marker', 'ssh')"
+          docker stop -t 90 old
+          docker rm old
+
+          # Recreate with the new image, carrying over the old image's
+          # environment the way in-place container updates do
+          docker run -d --name new -v migrate:/config \
+            -e PG_MAJOR=13 \
+            -e POSTGRES_PID=/config/postgresql/postmaster.pid \
+            -e PATH=/usr/lib/postgresql/13/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            "$IMAGE"
+          wait_for_login new
+          docker logs new 2>&1 | grep -q "PostgreSQL upgrade completed successfully."
+          test "$(docker exec new cat /config/postgres/PG_VERSION)" = "16"
+          test "$(psql_in new "SELECT count(*) FROM guacamole_connection WHERE connection_name = 'ci-marker'")" = "1"
+          docker exec new test -f /config/postgres-v13/PG_VERSION
+
+          # A second start must not migrate again
+          docker restart -t 90 new
+          wait_for_login new
+          docker rm -f new
+
+      - name: "Scenario 3: failed migration keeps the original data"
+        run: |
+          . /tmp/helpers.sh
+          docker run -d --name old2 -v keep:/config "$OLD_IMAGE"
+          wait_for_login old2
+          psql_in old2 "INSERT INTO guacamole_connection (connection_name, protocol) VALUES ('ci-marker', 'ssh')"
+          docker stop -t 90 old2
+          docker rm old2
+
+          # An existing backup directory makes the migration abort
+          docker run --rm -v keep:/config --entrypoint sh "$IMAGE" -c 'mkdir /config/postgres-v13'
+          docker run -d --name new2 -v keep:/config "$IMAGE"
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Running}}' new2)" = "false" ] && break
+            sleep 2
+          done
+          docker logs new2 2>&1 | grep -q "PostgreSQL migration failed, refusing to start"
+          docker run --rm -v keep:/config --entrypoint sh "$IMAGE" -c \
+            'test "$(cat /config/postgres/PG_VERSION)" = 13 && test -d /config/postgres/base'
+          docker rm -f new2
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          for c in $(docker ps -aq); do
+            echo "::group::$(docker inspect -f '{{.Name}}' $c)"
+            docker logs "$c" 2>&1 | tail -200
+            echo "::endgroup::"
+          done

@@ -35,7 +35,7 @@ echo "Running startup scripts"
 /usr/local/bin/_startup.sh
 
 echo "Checking PostgreSQL major version migration"
-if ! gosu postgres bash /usr/local/bin/_migrate_postgres.sh; then
+if ! bash /usr/local/bin/_migrate_postgres.sh; then
   echo "PostgreSQL migration failed, refusing to start. See messages above." >&2
   exit 1
 fi

@@ -5,7 +5,9 @@ set -Eeuo pipefail
 current_major="${PG_MAJOR:?}"
 old_major="${OLD_PG_MAJOR:-13}"
 pgdata="${PGDATA:?}"
-upgrade_user="${PG_UPGRADE_USER:-postgres}"
+# pg_upgrade must run as the install user of the old cluster, which the
+# init script creates as POSTGRES_USER
+upgrade_user="${PG_UPGRADE_USER:-${POSTGRES_USER:-postgres}}"
 old_bindir="/opt/postgresql${old_major}/bin"
 new_bindir="/usr/libexec/postgresql${current_major}"
 backup_dir="${pgdata}-v${old_major}"
@@ -13,6 +15,16 @@ upgrade_root="/config/db_check/pg_upgrade-${old_major}-to-${current_major}"
 socket_dir="/tmp/pg_upgrade"
 success=0
 moved=0
+
+# Run as root so PGDATA can be moved inside /config (owned by root); the
+# PostgreSQL tools themselves must run as the postgres system user
+as_postgres() {
+    if [ "$(id -u)" = "0" ]; then
+        gosu postgres "$@"
+    else
+        "$@"
+    fi
+}
 
 if [ ! -s "${pgdata}/PG_VERSION" ]; then
     echo "No PG_VERSION file found, skipping migration."
@@ -76,29 +88,29 @@ echo "Detected PostgreSQL ${old_major} data directory. Starting automated upgrad
 echo "Using PostgreSQL superuser '${upgrade_user}' for upgrade operations."
 
 mkdir -p "${upgrade_root}" "${socket_dir}"
+chown postgres:postgres "${upgrade_root}" "${socket_dir}" 2>/dev/null || :
 chmod 700 "${socket_dir}"
 
-# Reset the WAL on the old cluster so pg_upgrade can proceed
-# This must be done in-place before we backup the directory
-echo "Resetting WAL on PostgreSQL ${old_major} cluster..."
-if ! "${old_bindir}/pg_resetwal" -f "${pgdata}" >/dev/null 2>&1; then
-    echo "Warning: pg_resetwal did not succeed, but continuing..." >&2
-fi
+# pg_upgrade requires a cleanly shut down old cluster. Start and stop it once
+# with the old binaries, which also completes any crash recovery.
+echo "Ensuring PostgreSQL ${old_major} cluster was shut down cleanly..."
+rm -f "${pgdata}/postmaster.pid"
+as_postgres "${old_bindir}/pg_ctl" -D "${pgdata}" -w -t 120 \
+    -o "-c listen_addresses='' -c unix_socket_directories=${socket_dir}" \
+    -l "${upgrade_root}/old-cluster-shutdown.log" start
+as_postgres "${old_bindir}/pg_ctl" -D "${pgdata}" -w -t 120 -m fast stop
 
-# Clean up stale state files
-rm -f "${pgdata}/postmaster.pid" "${pgdata}/recovery.done"
-rm -f "${pgdata}/standby.signal" "${pgdata}/recovery.signal"
-
-sleep 1
 mv "${pgdata}" "${backup_dir}"
 moved=1
 mkdir -p "${pgdata}"
+chown postgres:postgres "${pgdata}" 2>/dev/null || :
 chmod 700 "${pgdata}"
 
 pwfile="$(mktemp)"
 printf '%s\n' "${POSTGRES_PASSWORD:-}" > "${pwfile}"
+chown postgres:postgres "${pwfile}" 2>/dev/null || :
 
-"${new_bindir}/initdb" \
+as_postgres "${new_bindir}/initdb" \
     --username="${upgrade_user}" \
     --pwfile="${pwfile}" \
     -D "${pgdata}"
@@ -107,7 +119,7 @@ cd "${upgrade_root}"
 
 echo "Running pg_upgrade in copy mode from ${backup_dir} to ${pgdata}."
 
-"${new_bindir}/pg_upgrade" \
+as_postgres "${new_bindir}/pg_upgrade" \
     --old-bindir="${old_bindir}" \
     --new-bindir="${new_bindir}" \
     --old-datadir="${backup_dir}" \
@@ -120,6 +132,9 @@ echo "Running pg_upgrade in copy mode from ${backup_dir} to ${pgdata}."
     --old-options="-c listen_addresses='' -c unix_socket_directories=${socket_dir}" \
     --new-options="-c listen_addresses='' -c unix_socket_directories=${socket_dir}" \
     --verbose
+
+# Keep the authentication rules of the old cluster; initdb defaults differ
+cp -p "${backup_dir}/pg_hba.conf" "${pgdata}/pg_hba.conf"
 
 success=1
 
