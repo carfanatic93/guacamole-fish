@@ -1,0 +1,45 @@
+--- a/src/terminal/terminal-handlers.c
++++ b/src/terminal/terminal-handlers.c
+@@ -34,6 +34,7 @@
+ #include <errno.h>
+ #include <stdbool.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <wchar.h>
+ 
+ /**
+@@ -488,6 +489,12 @@
+             term->char_handler = guac_terminal_apc;
+             break;
+ 
++        /* Device Control String (DCS), such as XTGETTCAP queries sent by
++         * fish 4.x, is not supported and is silently ignored */
++        case 'P':
++            term->char_handler = guac_terminal_osc_ignore;
++            break;
++
+         default:
+             guac_client_log(term->client, GUAC_LOG_DEBUG,
+                     "Unhandled ESC sequence: %c", c);
+@@ -739,8 +746,20 @@
+ 
+         }
+ 
++        /* Ignore sequences with a private prefix ("?", ">", "=", "<") for
++         * functions that do not support one, rather than executing them as
++         * the unprefixed function. For example, fish 4.x queries the kitty
++         * keyboard protocol with "CSI ? u", which would otherwise restore the
++         * saved cursor position and move the cursor to the top-left corner */
++        if (private_mode_character != 0 && c != ';'
++                && strchr("chlnJK", c) == NULL) {
++            guac_client_log(term->client, GUAC_LOG_DEBUG,
++                    "Ignoring unsupported CSI sequence: %c...%c",
++                    private_mode_character, c);
++        }
++
+         /* Handle CSI functions */ 
+-        switch (c) {
++        else switch (c) {
+ 
+             /* @: Insert characters (scroll right) */
+             case '@':

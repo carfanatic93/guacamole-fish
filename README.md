@@ -2,7 +2,7 @@
 
 # Docker Guacamole
 
-> Fork of [flcontainers/guacamole](https://github.com/flcontainers/guacamole) with additional fixes, most notably a patched guacd terminal emulator that silently ignores unsupported OSC escape sequences (e.g. OSC 7 current directory, OSC 8 hyperlinks, OSC 133 shell integration). Without it, modern shells such as fish 4.x (Debian 13) produce garbage like `ile://host/path` in front of the prompt. Patches applied to guacamole-server live in `patches/guacamole-server/`.
+> Fork of [flcontainers/guacamole](https://github.com/flcontainers/guacamole) with additional fixes, most notably a patched guacd terminal emulator that silently ignores unsupported OSC escape sequences (e.g. OSC 7 current directory, OSC 8 hyperlinks, OSC 133 shell integration), DCS queries, and CSI sequences with a private prefix it does not support (e.g. the kitty keyboard query `CSI ? u`). Without it, modern shells such as fish 4.x (Debian 13) produce garbage like `ile://host/path` in front of the prompt and draw the prompt over the login banner. Patches applied to guacamole-server live in `patches/guacamole-server/`.
 
 A Docker Container for [Apache Guacamole](https://guacamole.apache.org/), a client-less remote desktop gateway. It supports standard protocols like VNC, RDP, and SSH over HTML5.
 
