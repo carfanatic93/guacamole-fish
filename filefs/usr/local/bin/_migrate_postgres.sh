@@ -12,6 +12,7 @@ backup_dir="${pgdata}-v${old_major}"
 upgrade_root="/config/db_check/pg_upgrade-${old_major}-to-${current_major}"
 socket_dir="/tmp/pg_upgrade"
 success=0
+moved=0
 
 if [ ! -s "${pgdata}/PG_VERSION" ]; then
     echo "No PG_VERSION file found, skipping migration."
@@ -37,6 +38,12 @@ if [ -e "${backup_dir}" ]; then
     exit 1
 fi
 
+if [ ! -w "$(dirname "${pgdata}")" ]; then
+    echo "Migration cannot continue because $(dirname "${pgdata}") is not writable by $(id -un)." >&2
+    echo "PGDATA was left untouched." >&2
+    exit 1
+fi
+
 if [ ! -x "${old_bindir}/postgres" ] || [ ! -x "${new_bindir}/pg_upgrade" ] || [ ! -x "${new_bindir}/initdb" ]; then
     echo "Required PostgreSQL upgrade binaries are missing." >&2
     exit 1
@@ -50,12 +57,14 @@ cleanup() {
         rm -f "${pwfile}"
     fi
 
-    if [ "${success}" -ne 1 ]; then
+    # Only touch PGDATA once the original data has been moved to backup_dir;
+    # before that, PGDATA still holds the original cluster
+    if [ "${success}" -ne 1 ] && [ "${moved}" -eq 1 ] && [ -d "${backup_dir}" ]; then
         echo "PostgreSQL major upgrade failed. Restoring original PGDATA." >&2
         rm -rf "${pgdata}"
-        if [ -d "${backup_dir}" ]; then
-            mv "${backup_dir}" "${pgdata}"
-        fi
+        mv "${backup_dir}" "${pgdata}"
+    elif [ "${success}" -ne 1 ]; then
+        echo "PostgreSQL major upgrade failed. PGDATA was left in place." >&2
     fi
 
     exit "${exit_code}"
@@ -82,6 +91,7 @@ rm -f "${pgdata}/standby.signal" "${pgdata}/recovery.signal"
 
 sleep 1
 mv "${pgdata}" "${backup_dir}"
+moved=1
 mkdir -p "${pgdata}"
 chmod 700 "${pgdata}"
 
