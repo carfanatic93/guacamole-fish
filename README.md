@@ -6,7 +6,7 @@
 
 A Docker Container for [Apache Guacamole](https://guacamole.apache.org/), a client-less remote desktop gateway. It supports standard protocols like VNC, RDP, and SSH over HTML5.
 
-Supported Linux OS: amd64, arm64
+Supported Linux OS: amd64 (arm64 builds are disabled in this fork; re-add `linux/arm64` to `platforms` in the workflows if needed)
 
 This container runs the guacamole web client, the guacd server and a postgres database (version 16).
 
