@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Restore image-specific environment (see Dockerfile), in case the container
+# was recreated with the environment of an older image
+. /etc/guacamole-image.env
+
 # Create password if DB not initialized
 if [ -f "/config/postgres/PG_VERSION" ]; then
   echo "DB exisit"

@@ -390,6 +390,19 @@ ENV CATALINA_PID=/tmp/tomcat.pid
 ENV POSTGRES_PID=/config/postgres/postmaster.pid
 ENV GUACD_PID=/tmp/guacd.pid
 
+# Container managers that "update" a container in place often carry over the
+# previous image's environment (e.g. PG_MAJOR=13 from older releases), which
+# breaks the PostgreSQL migration. Record the values that belong to this image
+# so startup.sh can restore them regardless of the container's environment.
+RUN { \
+      echo "export GUAC_VER='${GUAC_VER}'"; \
+      echo "export PG_MAJOR='${PG_MAJOR}'"; \
+      echo "export OLD_PG_MAJOR='${OLD_PG_MAJOR}'"; \
+      echo "export POSTGRES_PID='${POSTGRES_PID}'"; \
+      echo "export LD_LIBRARY_PATH='${LD_LIBRARY_PATH}'"; \
+      echo "export PATH='${PATH}'"; \
+    } > /etc/guacamole-image.env
+
 # Copy files
 COPY filefs /
 RUN chmod +x /usr/local/bin/*.sh
