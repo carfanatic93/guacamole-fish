@@ -119,6 +119,7 @@ ARG BUILD_DIR
 
 COPY --from=libtelnet-builder ${PREFIX_DIR} ${PREFIX_DIR}
 COPY --from=freerdp-builder ${PREFIX_DIR} ${PREFIX_DIR}
+COPY patches/guacamole-server /tmp/patches/guacamole-server
 
 RUN apk add --no-cache                \
         autoconf                      \
@@ -140,6 +141,7 @@ RUN apk add --no-cache                \
         make                          \
         openssl-dev                   \
         pango-dev                     \
+        patch                         \
         pkgconf                       \
         pulseaudio-dev                \
         tar                           \
@@ -157,6 +159,9 @@ RUN set -eux; \
     tar -xzf /tmp/guacamole-server.tar.gz -C /tmp; \
     mv "/tmp/guacamole-server-${VERSION}" "${BUILD_DIR}"; \
     cd "${BUILD_DIR}"; \
+    for p in /tmp/patches/guacamole-server/*.patch; do \
+      patch -p1 < "$p"; \
+    done; \
     sed -i \
       's/freerdp_settings_set_bool(rdp_settings, FreeRDP_SupportGraphicsPipeline, TRUE);/freerdp_settings_set_bool(rdp_settings, FreeRDP_SupportGraphicsPipeline, TRUE);\n        freerdp_settings_set_bool(rdp_settings, FreeRDP_GfxH264, TRUE);/' \
       "${BUILD_DIR}/src/protocols/rdp/settings.c"; \
@@ -232,18 +237,18 @@ ARG APPLICATION="guacamole"
 ARG BUILD_RFC3339="2025-07-07T23:00:00Z"
 ARG REVISION="local"
 ARG DESCRIPTION="Fully Packaged and Multi-Arch Guacamole container"
-ARG PACKAGE="flcontainers/guacamole"
+ARG PACKAGE="carfanatic93/guacamole-fish"
 
 LABEL org.opencontainers.image.ref.name="${PACKAGE}" \
   org.opencontainers.image.created=$BUILD_RFC3339 \
-  org.opencontainers.image.authors="MaxWaldorf" \
-  org.opencontainers.image.documentation="https://github.com/${PACKAGE}/README.md" \
+  org.opencontainers.image.authors="MaxWaldorf, carfanatic93" \
+  org.opencontainers.image.documentation="https://github.com/${PACKAGE}/blob/main/README.md" \
   org.opencontainers.image.description="${DESCRIPTION}" \
   org.opencontainers.image.licenses="GPLv3" \
   org.opencontainers.image.source="https://github.com/${PACKAGE}" \
   org.opencontainers.image.revision=$REVISION \
   org.opencontainers.image.version=$VERSION \
-  org.opencontainers.image.url="https://hub.docker.com/r/${PACKAGE}/"
+  org.opencontainers.image.url="https://github.com/${PACKAGE}/pkgs/container/guacamole-fish"
 
 ENV \
   GUAC_VER=${VERSION} \

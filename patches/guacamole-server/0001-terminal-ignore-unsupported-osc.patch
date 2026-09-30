@@ -1,0 +1,73 @@
+--- a/src/terminal/terminal/terminal-handlers.h
++++ b/src/terminal/terminal/terminal-handlers.h
+@@ -176,6 +176,18 @@
+ int guac_terminal_window_title(guac_terminal* term, unsigned char c);
+ 
+ /**
++ * Discards the remainder of an OSC sequence which is not supported, up to
++ * and including the string terminator (BEL or ST).
++ *
++ * @param term
++ *     The terminal that received the given character of data.
++ *
++ * @param c
++ *     The character that was received by the given terminal.
++ */
++int guac_terminal_osc_ignore(guac_terminal* term, unsigned char c);
++
++/**
+  * Parses the remainder of xterm's OSC sequence for redefining the terminal
+  * emulator's palette.
+  *
+--- a/src/terminal/terminal-handlers.c
++++ b/src/terminal/terminal-handlers.c
+@@ -1560,6 +1560,17 @@
+ 
+ }
+ 
++int guac_terminal_osc_ignore(guac_terminal* term, unsigned char c) {
++
++    /* Stop on BEL or ECMA-48 ST (String Terminator), discarding everything
++     * else, including the ESC which precedes the 7-bit ST ("ESC \\") */
++    if (c == 0x9C || c == 0x5C || c == 0x07)
++        term->char_handler = guac_terminal_echo;
++
++    return 0;
++
++}
++
+ int guac_terminal_osc(guac_terminal* term, unsigned char c) {
+ 
+     static int operation = 0;
+@@ -1599,20 +1610,30 @@
+         else if (operation == 4)
+             term->char_handler = guac_terminal_xterm_palette;
+ 
++        /* Silently ignore all other OSC sequences (such as OSC 7 current
++         * directory, OSC 8 hyperlinks or OSC 133 shell integration, as sent
++         * by fish 4.x and other modern shells) rather than echoing their
++         * contents to the terminal */
++        else
++            term->char_handler = guac_terminal_osc_ignore;
++
+         /* Reset parameter for next OSC */
+         operation = 0;
+ 
+     }
+ 
+     /* Stop on ECMA-48 ST (String Terminator */
+-    else if (c == 0x9C || c == 0x5C || c == 0x07)
++    else if (c == 0x9C || c == 0x5C || c == 0x07) {
++        operation = 0;
+         term->char_handler = guac_terminal_echo;
++    }
+ 
+     /* Stop on unrecognized character */
+     else {
+         guac_client_log(term->client, GUAC_LOG_DEBUG,
+                 "Unexpected character in OSC: 0x%X", c);
++        operation = 0;
+         term->char_handler = guac_terminal_echo;
+     }
+ 
+     return 0;
